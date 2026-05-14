@@ -1,0 +1,96 @@
+version: "3.8"
+
+services:
+  # ─────────────────────────────────────────
+  # MySQL Database
+  # ─────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: smart_hostel_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 1234
+      MYSQL_DATABASE: smart_hostel
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p1234"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - smart_hostel_net
+
+  # ─────────────────────────────────────────
+  # Spring Boot Backend
+  # ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./smart-hostel-backend
+      dockerfile: Dockerfile
+    container_name: smart_hostel_backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/smart_hostel?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: 1234
+      AI_BASE_URL: http://ai-service:5001
+    ports:
+      - "8080:8080"
+    networks:
+      - smart_hostel_net
+
+  # ─────────────────────────────────────────
+  # Python Flask AI Service
+  # ─────────────────────────────────────────
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: smart_hostel_ai
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: 1234
+      DB_NAME: smart_hostel
+    ports:
+      - "5001:5001"
+    networks:
+      - smart_hostel_net
+
+  # ─────────────────────────────────────────
+  # React Frontend (Nginx)
+  # ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./smart-hostel-frontend
+      dockerfile: Dockerfile
+    container_name: smart_hostel_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+    networks:
+      - smart_hostel_net
+
+# ─────────────────────────────────────────
+# Volumes & Networks
+# ─────────────────────────────────────────
+volumes:
+  mysql_data:
+
+networks:
+  smart_hostel_net:
+    driver: bridge
